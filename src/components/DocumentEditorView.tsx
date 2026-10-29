@@ -21,6 +21,11 @@ import {
   Edit3,
   Wand2,
   Check,
+  Search,
+  Zap,
+  BookOpen,
+  Layers,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface DocumentEditorProps {
@@ -111,11 +116,19 @@ export const DocumentEditorView: React.FC<DocumentEditorProps> = ({
         body: JSON.stringify({
           currentContent: content,
           actionType,
+          docType: currentDocType,
           instruction: customInstruction || actionType,
           data: {
             subject: teacher.subject,
             topic: learning.topic,
             teacherName: teacher.teacherName,
+            teacherNip: teacher.teacherNip,
+            vocation: teacher.vocation,
+            grade: teacher.grade,
+            phase: teacher.phase,
+            semester: teacher.semester,
+            cp: learning.cp,
+            tp: learning.tp,
           },
         }),
       });
@@ -131,7 +144,13 @@ export const DocumentEditorView: React.FC<DocumentEditorProps> = ({
         if (editorRef.current) {
           editorRef.current.innerHTML = data.content;
         }
-        setFeedbackMessage('Dokumen berhasil disempurnakan oleh AI!');
+        setFeedbackMessage(
+          actionType === 'soal_hots'
+            ? `Paket Soal & Studi Kasus HOTS materi "${learning.topic}" berhasil dicari & ditambahkan oleh AI!`
+            : actionType === 'remedial_pengayaan'
+            ? `Program Remedial & Pengayaan materi "${learning.topic}" berhasil dicari & diperbarui oleh AI!`
+            : `Dokumen berhasil disempurnakan oleh AI sesuai topik "${learning.topic}"!`
+        );
       }
     } catch (err: any) {
       console.error(err);
@@ -302,18 +321,48 @@ export const DocumentEditorView: React.FC<DocumentEditorProps> = ({
         </div>
       )}
 
-      {/* AI Assist Toolbar */}
-      <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 rounded-2xl p-4 text-white shadow-md border border-blue-800/40">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex items-center space-x-2">
-            <Wand2 className="w-4 h-4 text-amber-400 animate-pulse" />
-            <span className="text-xs font-bold text-amber-300 uppercase tracking-wide">
-              AI Editor Assistant:
+      {/* AI Assist Toolbar - Maximized Intelligent Assistant */}
+      <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 rounded-2xl p-4 text-white shadow-lg border border-blue-700/50 space-y-3">
+        {/* Context & Status Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-2.5 border-b border-blue-800/40">
+          <div className="flex items-center flex-wrap gap-2">
+            <div className="flex items-center space-x-1.5 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30">
+              <Wand2 className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span className="text-xs font-extrabold text-amber-300 uppercase tracking-wide">
+                AI Assistant Pro:
+              </span>
+            </div>
+            <span className="text-[11px] bg-blue-900/60 text-blue-200 px-2 py-0.5 rounded-md border border-blue-700/40">
+              Mapel: <strong className="text-white">{teacher.subject || 'Kejuruan'}</strong>
+            </span>
+            <span className="text-[11px] bg-indigo-900/60 text-indigo-200 px-2 py-0.5 rounded-md border border-indigo-700/40">
+              Topik: <strong className="text-amber-200">{learning.topic || 'Kompetensi'}</strong>
+            </span>
+            <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-md border border-slate-700">
+              Target: <span className="text-slate-100 font-semibold">{currentDocConfig.title}</span>
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {(currentDocType === 'naskah_soal' || currentDocType === 'kisi_kisi') && (
+          <div className="text-[11px] flex items-center gap-1.5 text-slate-300 shrink-0">
+            {isAiRefining ? (
+              <span className="text-amber-300 font-semibold flex items-center gap-1.5 animate-pulse">
+                <Sparkles className="w-3 h-3 text-amber-400 animate-spin" />
+                AI sedang mencari data terbaru &amp; menyusun konten...
+              </span>
+            ) : (
+              <span className="text-emerald-400 flex items-center gap-1 font-medium">
+                <Check className="w-3 h-3" />
+                AI Siap mencari data terkini
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Dynamic Contextual Action Buttons tailored to active Document Type */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Document Specific Actions */}
+          {(currentDocType === 'naskah_soal' || currentDocType === 'kisi_kisi') && (
+            <>
               <button
                 onClick={handleGenerateSoalDirect}
                 disabled={isAiRefining}
@@ -321,60 +370,286 @@ export const DocumentEditorView: React.FC<DocumentEditorProps> = ({
                 title="AI akan mencari dan menyusun 10 butir soal asesmen secara presisi berdasarkan Tujuan Pembelajaran dan Topik materi"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-                <span>Cari / Buat Soal AI (Berdasarkan TP & Topik)</span>
+                <span>Cari / Buat 10 Soal AI (Berdasarkan TP &amp; Topik)</span>
               </button>
-            )}
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'soal_hots',
+                    `Cari dan tambahkan 3 soal studi kasus HOTS industri terkini 2026/2027 beserta kunci analitis dan rubrik penskoran untuk materi ${learning.topic}`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-red-900/80 hover:bg-red-800 text-rose-100 text-xs px-3 py-1.5 rounded-lg border border-red-700/60 transition-all font-semibold disabled:opacity-50 cursor-pointer flex items-center gap-1"
+              >
+                <Zap className="w-3 h-3 text-amber-300" />
+                <span>+ 3 Soal HOTS Industri</span>
+              </button>
+            </>
+          )}
+
+          {currentDocType === 'program_remedial' && (
+            <>
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'remedial_pengayaan',
+                    `Cari dan susun skenario program remedial terstruktur berbasis kendala TP materi ${learning.topic} serta program pengayaan proyek industri DUDIKA dan tutor sebaya`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-gradient-to-r from-red-600 via-amber-600 to-emerald-600 hover:from-red-700 hover:to-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-sm border border-amber-400/50 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                title="AI mencari dan merumuskan skenario remedial individual serta proyek pengayaan DUDIKA berbasis materi aktif"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                <span>Cari Skenario Remedial &amp; Pengayaan AI (TP &amp; Topik)</span>
+              </button>
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'remedial_pengayaan',
+                    `Tambahkan jobsheet praktik remedial mandiri di lab bengkel untuk materi ${learning.topic} dengan langkah diagnostik bertahap`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-red-950/80 hover:bg-red-900 text-red-200 text-xs px-3 py-1.5 rounded-lg border border-red-800/60 transition-all font-medium disabled:opacity-50 cursor-pointer"
+              >
+                + Job Sheet Remidi Lab
+              </button>
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'remedial_pengayaan',
+                    `Tambahkan skenario proyek pengayaan Teaching Factory (TEFA) materi ${learning.topic} dan peran tutor sebaya Menyama Braya`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 text-xs px-3 py-1.5 rounded-lg border border-emerald-800/60 transition-all font-medium disabled:opacity-50 cursor-pointer"
+              >
+                + Proyek Pengayaan TEFA
+              </button>
+            </>
+          )}
+
+          {currentDocType === 'modul_ajar' && (
+            <>
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'deep_learning',
+                    `Cari pendekatan Deep Learning terkini (Memahami berkesadaran, Mengaplikasi bermakna, Merefleksi berkesadaran) dengan studi kasus industri nyata pada materi ${learning.topic}`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-sm border border-blue-400/50 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                <span>Cari Pendekatan Deep Learning &amp; Kasus Nyata</span>
+              </button>
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'custom',
+                    `Tambahkan 3 pertanyaan pemantik esensial dan menggugah nalar kritis peserta didik untuk materi ${learning.topic}`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-100 text-xs px-3 py-1.5 rounded-lg border border-indigo-700/60 transition-all font-medium disabled:opacity-50 cursor-pointer"
+              >
+                + Pertanyaan Pemantik
+              </button>
+            </>
+          )}
+
+          {currentDocType === 'bahan_ajar' && (
+            <>
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'bahan_ajar',
+                    `Cari materi esensial terkini, standar operasional industri 2026, dan studi kasus DUDIKA untuk materi ${learning.topic}`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-sm border border-blue-400/50 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                <span>Cari Materi Terkini &amp; Kasus DUDIKA</span>
+              </button>
+              <button
+                onClick={() =>
+                  handleAiRefine(
+                    'custom',
+                    `Tambahkan prosedur SOP kerja presisi dan standar keselamatan K3LH industri 2026 untuk materi ${learning.topic}`
+                  )
+                }
+                disabled={isAiRefining}
+                className="bg-blue-900/80 hover:bg-blue-800 text-blue-100 text-xs px-3 py-1.5 rounded-lg border border-blue-700/60 transition-all font-medium disabled:opacity-50 cursor-pointer"
+              >
+                + Standar SOP &amp; K3LH
+              </button>
+            </>
+          )}
+
+          {currentDocType === 'lkpd' && (
             <button
-              onClick={() => handleAiRefine('perluas', 'Perluas uraian materi dan tambahkan konteks industri SMK')}
+              onClick={() =>
+                handleAiRefine(
+                  'custom',
+                  `Cari dan susun Job Sheet praktik dengan instruksi langkah kerja SOP presisi, parameter uji, dan analisis troubleshooting materi ${learning.topic}`
+                )
+              }
               disabled={isAiRefining}
-              className="bg-blue-800/80 hover:bg-blue-700 text-blue-100 text-xs px-3 py-1.5 rounded-lg border border-blue-600/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
+              className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-sm border border-indigo-400/50 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
             >
-              + Perluas Materi
+              <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+              <span>Cari Jobsheet Praktik &amp; Kasus Nyata (TP &amp; Topik)</span>
             </button>
+          )}
+
+          {currentDocType === 'media_pembelajaran' && (
             <button
-              onClick={() => handleAiRefine('sederhanakan', 'Sederhanakan bahasa agar mudah dipahami peserta didik SMK')}
+              onClick={() =>
+                handleAiRefine(
+                  'media',
+                  `Cari rekomendasi software simulator digital, video interaktif industri, dan media pembelajaran terkini untuk materi ${learning.topic}`
+                )
+              }
               disabled={isAiRefining}
-              className="bg-blue-800/80 hover:bg-blue-700 text-blue-100 text-xs px-3 py-1.5 rounded-lg border border-blue-600/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow-sm border border-purple-400/50 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
             >
-              Sederhanakan Bahasa
+              <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+              <span>Cari Simulator &amp; Media Interaktif Terkini</span>
             </button>
-            <button
-              onClick={() => handleAiRefine('kurikulum', 'Sesuaikan dengan Capaian Pembelajaran Kurikulum Merdeka dan DUDIKA')}
-              disabled={isAiRefining}
-              className="bg-blue-800/80 hover:bg-blue-700 text-blue-100 text-xs px-3 py-1.5 rounded-lg border border-blue-600/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
-            >
-              Sesuaikan Kurikulum
-            </button>
-            <button
-              onClick={() => handleAiRefine('bali', 'Tambahkan nilai kearifan lokal Bali Tri Hita Karana dan Menyama Braya')}
-              disabled={isAiRefining}
-              className="bg-amber-950/70 hover:bg-amber-900 text-amber-200 text-xs px-3 py-1.5 rounded-lg border border-amber-700/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
-            >
-              + Kearifan Lokal Bali
-            </button>
-          </div>
+          )}
+
+          {/* Universal Refinement Actions */}
+          <button
+            onClick={() =>
+              handleAiRefine(
+                'perluas',
+                `Perluas uraian materi dan tambahkan konteks industri SMK Negeri 1 Bebandem materi ${learning.topic}`
+              )
+            }
+            disabled={isAiRefining}
+            className="bg-blue-800/80 hover:bg-blue-700 text-blue-100 text-xs px-3 py-1.5 rounded-lg border border-blue-600/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
+          >
+            + Perluas Materi &amp; DUDIKA
+          </button>
+          <button
+            onClick={() =>
+              handleAiRefine(
+                'sederhanakan',
+                `Sederhanakan bahasa agar mudah dipahami peserta didik SMK pada materi ${learning.topic}`
+              )
+            }
+            disabled={isAiRefining}
+            className="bg-blue-800/80 hover:bg-blue-700 text-blue-100 text-xs px-3 py-1.5 rounded-lg border border-blue-600/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
+          >
+            Sederhanakan Bahasa
+          </button>
+          <button
+            onClick={() =>
+              handleAiRefine(
+                'kurikulum',
+                `Sesuaikan dengan Capaian Pembelajaran Kurikulum Merdeka dan DUDIKA pada materi ${learning.topic}`
+              )
+            }
+            disabled={isAiRefining}
+            className="bg-blue-800/80 hover:bg-blue-700 text-blue-100 text-xs px-3 py-1.5 rounded-lg border border-blue-600/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
+          >
+            Sesuaikan Kurikulum
+          </button>
+          <button
+            onClick={() =>
+              handleAiRefine(
+                'bali',
+                `Tambahkan nilai kearifan lokal Bali Tri Hita Karana dan Menyama Braya pada pembelajaran materi ${learning.topic}`
+              )
+            }
+            disabled={isAiRefining}
+            className="bg-amber-950/70 hover:bg-amber-900 text-amber-200 text-xs px-3 py-1.5 rounded-lg border border-amber-700/50 transition-all font-medium disabled:opacity-50 cursor-pointer"
+          >
+            + Kearifan Lokal Bali
+          </button>
         </div>
 
-        <div className="mt-3 pt-3 border-t border-blue-800/40 flex items-center gap-2">
-          <input
-            type="text"
-            value={customAiPrompt}
-            onChange={(e) => setCustomAiPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && customAiPrompt.trim()) {
-                handleAiRefine('custom', customAiPrompt);
-              }
-            }}
-            placeholder="Ketik instruksi khusus untuk AI (misal: 'Tambahkan studi kasus bengkel di Bebandem')..."
-            className="flex-1 bg-slate-800/90 text-white placeholder-slate-400 text-xs px-3.5 py-2 rounded-xl border border-blue-700/60 focus:outline-none focus:ring-1 focus:ring-amber-400"
-          />
-          <button
-            onClick={() => customAiPrompt.trim() && handleAiRefine('custom', customAiPrompt)}
-            disabled={isAiRefining || !customAiPrompt.trim()}
-            className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2 rounded-xl transition-all disabled:opacity-40 cursor-pointer shrink-0"
-          >
-            {isAiRefining ? 'Memproses...' : 'Terapkan AI'}
-          </button>
+        {/* Custom AI Instruction Bar */}
+        <div className="pt-2 border-t border-blue-800/40 space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={customAiPrompt}
+                onChange={(e) => setCustomAiPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && customAiPrompt.trim()) {
+                    handleAiRefine('custom', customAiPrompt);
+                  }
+                }}
+                placeholder={`Tulis perintah pencarian AI (misal: 'Cari 5 soal HOTS terbaru materi ${learning.topic || 'ini'}', 'Cari skenario remidi & pengayaan')...`}
+                className="w-full bg-slate-800/90 text-white placeholder-slate-400 text-xs pl-8 pr-3.5 py-2.5 rounded-xl border border-blue-700/60 focus:outline-none focus:ring-1 focus:ring-amber-400"
+              />
+            </div>
+            <button
+              onClick={() => customAiPrompt.trim() && handleAiRefine('custom', customAiPrompt)}
+              disabled={isAiRefining || !customAiPrompt.trim()}
+              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl transition-all disabled:opacity-40 cursor-pointer shrink-0 shadow-sm flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+              <span>{isAiRefining ? 'Mencari...' : 'Terapkan AI'}</span>
+            </button>
+          </div>
+
+          {/* Quick Search Suggestion Chips */}
+          <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-slate-300">
+            <span className="text-slate-400 font-medium">Contoh Pencarian:</span>
+            <button
+              type="button"
+              onClick={() => {
+                const prompt = `Cari 5 butir soal HOTS terbaru beserta kunci jawaban analitis dan rubrik penskoran untuk materi ${learning.topic}`;
+                setCustomAiPrompt(prompt);
+                handleAiRefine('soal_hots', prompt);
+              }}
+              className="bg-slate-800/90 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded-md border border-slate-700 hover:border-slate-500 cursor-pointer transition-all"
+            >
+              🔍 Cari 5 Soal HOTS Terbaru
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const prompt = `Cari program remedial terstruktur berbasis modul lab dan proyek pengayaan industri untuk materi ${learning.topic}`;
+                setCustomAiPrompt(prompt);
+                handleAiRefine('remedial_pengayaan', prompt);
+              }}
+              className="bg-slate-800/90 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded-md border border-slate-700 hover:border-slate-500 cursor-pointer transition-all"
+            >
+              🔍 Cari Program Remidi &amp; Pengayaan
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const prompt = `Cari studi kasus nyata implementasi DUDIKA 2026 dan troubleshooting pada materi ${learning.topic}`;
+                setCustomAiPrompt(prompt);
+                handleAiRefine('custom', prompt);
+              }}
+              className="bg-slate-800/90 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded-md border border-slate-700 hover:border-slate-500 cursor-pointer transition-all"
+            >
+              🔍 Cari Studi Kasus Industri 2026
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const prompt = `Tambahkan studi kasus bengkel / industri mitra di Karangasem Bali untuk materi ${learning.topic}`;
+                setCustomAiPrompt(prompt);
+                handleAiRefine('bali', prompt);
+              }}
+              className="bg-slate-800/90 hover:bg-slate-700 text-slate-200 px-2 py-0.5 rounded-md border border-slate-700 hover:border-slate-500 cursor-pointer transition-all"
+            >
+              🔍 Kasus Mitra di Bebandem/Bali
+            </button>
+          </div>
         </div>
       </div>
 

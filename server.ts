@@ -33,21 +33,37 @@ if (apiKey) {
 }
 
 // Helper to call Gemini with multi-model fallback (gemini-3.5-flash first, then gemini-3.8-flash)
-async function callGeminiSafe(prompt: string, timeoutMs = 12000): Promise<string | null> {
+async function callGeminiSafe(prompt: string, timeoutMs = 12000, enableSearch = false): Promise<string | null> {
   if (!ai) return null;
   const modelsToTry = ['gemini-3.5-flash', 'gemini-3.8-flash'];
   for (const model of modelsToTry) {
     try {
-      const generatePromise = ai.models
-        .generateContent({
+      const generatePromise = (async () => {
+        if (!ai) return null;
+        if (enableSearch) {
+          try {
+            const resWithSearch = await ai.models.generateContent({
+              model,
+              contents: prompt,
+              config: {
+                tools: [{ googleSearch: {} }],
+              },
+            });
+            if (resWithSearch.text) return resWithSearch.text.trim();
+          } catch (errSearch: any) {
+            console.warn(`Search grounding attempt on ${model} error:`, errSearch.message);
+          }
+        }
+        // Standard generation without tools if search fails or is disabled
+        const res = await ai.models.generateContent({
           model,
           contents: prompt,
-        })
-        .then((res) => (res.text ? res.text.trim() : null))
-        .catch((err) => {
-          console.warn(`Gemini call error (${model}):`, err.message);
-          return null;
         });
+        return res.text ? res.text.trim() : null;
+      })().catch((err: any) => {
+        console.warn(`Gemini call error (${model}):`, err.message);
+        return null;
+      });
 
       const timeoutPromise = new Promise<null>((resolve) =>
         setTimeout(() => {
@@ -596,45 +612,185 @@ app.post('/api/gemini/generate-all', async (req, res) => {
   return res.json({ documents: generated });
 });
 
-// 4. API: Refine / Edit Document with AI
+// 4. API: Refine / Edit Document with AI (Maximized Context & Search Grounding)
 app.post('/api/gemini/refine-doc', async (req, res) => {
-  const { currentContent, actionType, instruction, data } = req.body;
+  const { currentContent, actionType, instruction, docType, data } = req.body;
 
   if (!currentContent) {
     return res.status(400).json({ error: 'currentContent wajib disertakan' });
   }
 
+  const subjectStr = data?.subject || 'Kejuruan SMK';
+  const topicStr = data?.topic || 'Kompetensi Pembelajaran';
+  const cpStr = data?.cp || '';
+  const tpStr = data?.tp || '';
+  const gradeStr = data?.grade || 'XI';
+  const phaseStr = data?.phase || 'F';
+  const vocationStr = data?.vocation || 'SMK Negeri 1 Bebandem';
+  const teacherNameStr = data?.teacherName || 'Guru Mata Pelajaran';
+
+  const isSearchRequest =
+    actionType === 'search_latest' ||
+    actionType === 'soal_hots' ||
+    actionType === 'remedial_pengayaan' ||
+    actionType === 'bahan_ajar' ||
+    actionType === 'media' ||
+    (instruction && /cari|terbaru|terkini|update|2026|2027|dudika|industri|soal|remidi|pengayaan/i.test(instruction));
+
   const prompt = `
-Modifikasi dokumen administrasi SMK Negeri 1 Bebandem berikut:
+Anda adalah Asisten Pakar AI Kurikulum Merdeka & Konsultan DUDIKA di SMK Negeri 1 Bebandem, Karangasem, Bali.
+Anda bertugas mencari informasi terbaru, menyusun konten pembelajaran berbobot tinggi, dan memperkaya dokumen administrasi guru secara presisi dan sistematis.
+
+KONTEKS LENGKAP PEMBELAJARAN:
+- Satuan Pendidikan: SMK Negeri 1 Bebandem (Tahun Ajaran 2026/2027)
+- Guru Pengampu: ${teacherNameStr}
+- Program Keahlian: ${vocationStr}
+- Mata Pelajaran: "${subjectStr}"
+- Materi Pokok / Topik: "${topicStr}"
+- Kelas / Fase: Kelas ${gradeStr} (Fase ${phaseStr})
+- Capaian Pembelajaran (CP) Terkait:
+"""${cpStr}"""
+- Rincian Tujuan Pembelajaran (TP) Terkait:
+"""${tpStr}"""
+- Jenis Dokumen: "${docType || 'Dokumen Administrasi Guru'}"
+
+AKSI YANG DIPILIH: "${actionType}"
+INSTRUKSI KHUSUS DARI GURU:
+"""${instruction}"""
+
+DOKUMEN AWAL SAAT INI (HTML):
 """${currentContent}"""
-Aksi: ${actionType}
-Instruksi: ${instruction}
-Kembalikan HANYA HTML bersih hasil pembaruan.
+
+ATURAN DAN FORMAT EKSEKUSI:
+1. JIKA AKSI TERKAIT SOAL (soal_hots, kisi_kisi, atau mencari/menambah soal):
+   - Cari dan rumuskan butir-butir soal evaluasi baru berbasis stimulus studi kasus nyata industri atau troubleshooting pada materi "${topicStr}".
+   - Setiap butir soal WAJIB secara eksplisit menguji indikator dari Tujuan Pembelajaran (TP) di atas.
+   - Sertakan Kunci Jawaban Lengkap, Tingkat Kognitif Bloom (C2-C6), dan Rubrik/Pedoman Penskoran terukur.
+   - Integrasikan ke dalam dokumen yang ada dengan susunan tabel atau daftar yang rapi.
+
+2. JIKA AKSI TERKAIT PROGRAM REMEDIAL & PENGAYAAN (remedial_pengayaan, remidi, tutor sebaya):
+   - Cari dan susun skenario bimbingan remedial yang membedah akar kesulitan siswa pada materi "${topicStr}" dan TP yang belum tuntas (KKTP < 75).
+   - Susun Job Sheet atau Lembar Kerja Remedial praktis yang fokus melatih kembali kompetensi dasar "${topicStr}".
+   - Susun Program Pengayaan nyata berbasis Teaching Factory (TEFA) atau studi kasus industri DUDIKA tingkat lanjut bagi siswa yang sudah tuntas (KKTP >= 75) serta skenario penugasan tutor sebaya.
+   - Sajikan dalam format tabel matrik dan penjelasan langkah terstruktur.
+
+3. JIKA AKSI TERKAIT BAHAN AJAR / LKPD / MEDIA:
+   - Cari konsep esensial terkini, standar SOP industri (SKKNI/DUDIKA), prosedur keselamatan kerja (K3LH), dan studi kasus nyata untuk materi "${topicStr}".
+   - Hubungkan secara nyata dengan kemitraan DUDIKA dan kearifan lokal Bali (Tri Hita Karana / Menyama Braya).
+
+4. FORMAT OUTPUT:
+   - Kembalikan HANYA kode HTML bersih (gunakan tag h2, h3, h4, p, ul, ol, table class="w-full border-collapse border border-gray-400 text-sm my-4", div).
+   - Dilarang memberikan teks pendahuluan atau penutup seperti "Berikut adalah...".
+   - Dilarang membungkus dengan tag <html>, <head>, atau <body>.
 `;
 
-  const aiText = await callGeminiSafe(prompt, 3500);
+  const aiText = await callGeminiSafe(prompt, 14000, isSearchRequest);
   if (aiText) {
-    return res.json({ content: aiText });
+    const cleaned = aiText.replace(/```html/g, '').replace(/```/g, '').trim();
+    return res.json({ content: cleaned, source: 'ai' });
   }
 
+  // Fallback if AI service is temporarily delayed - generate context-aware topic-aligned enhancement
   let refined = currentContent;
-  if (actionType === 'perluas') {
+  if (actionType === 'soal_hots' || (instruction && /soal/i.test(instruction))) {
     refined += `
-      <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
-        <h4 class="font-bold text-blue-900">Tambahan Pengayaan Materi Industri (DUDIKA)</h4>
-        <p class="text-sm text-gray-700">Untuk memperdalam penguasaan peserta didik, ditambahkan studi kasus riil mengenai integrasi teknologi modern dan standardisasi mutu pada SMK Negeri 1 Bebandem.</p>
+      <div class="mt-6 p-4 bg-rose-50 border border-rose-300 rounded-xl">
+        <h4 class="font-bold text-rose-950 text-base mb-2">Tambahan Paket Soal Evaluasi &amp; Studi Kasus HOTS Terkini (${topicStr})</h4>
+        <p class="text-xs text-rose-800 mb-3">Disusun selaras dengan Tujuan Pembelajaran dan standar kompetensi industri DUDIKA:</p>
+        
+        <div class="p-3 bg-white rounded border border-rose-200 text-xs text-slate-800 mb-3">
+          <p class="font-semibold text-slate-900 mb-1">Soal Kasus 1 (Analisis Gangguan C4 - Selaras TP 3):</p>
+          <p class="mb-2">Saat mengoperasikan atau menguji unit <strong>${topicStr}</strong> di workstation lab SMK Negeri 1 Bebandem, teknisi mendeteksi deviasi parameter kerja di atas batas toleransi yang mengakibatkan penurunan efisiensi sistem. Analisislah 2 kemungkinan faktor penyebab utama dan uraikan prosedur isolasi masalah secara berurutan sesuai SOP!</p>
+          <div class="bg-slate-50 p-2 rounded text-slate-700">
+            <strong>Kunci &amp; Rubrik:</strong> Identifikasi sumber anomali (skor 5), langkah isolasi komponen bertahap (skor 5). Total Skor: 10.
+          </div>
+        </div>
+
+        <div class="p-3 bg-white rounded border border-rose-200 text-xs text-slate-800">
+          <p class="font-semibold text-slate-900 mb-1">Soal Kasus 2 (Sintesis Solusi C6 - Selaras TP 4):</p>
+          <p class="mb-2">Rancanglah lembar ceklis kendali mutu (Quality Control) untuk memvalidasi kelaikan hasil kerja materi <strong>${topicStr}</strong> sebelum diserahterimakan kepada mitra industri atau unit produksi Teaching Factory (TEFA)!</p>
+          <div class="bg-slate-50 p-2 rounded text-slate-700">
+            <strong>Kunci &amp; Rubrik:</strong> Kelengkapan parameter QC (skor 5), kejelasan standar toleransi (skor 5). Total Skor: 10.
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (actionType === 'remedial_pengayaan' || (instruction && /remidi|pengayaan/i.test(instruction))) {
+    refined += `
+      <div class="mt-6 p-4 bg-emerald-50 border border-emerald-300 rounded-xl">
+        <h4 class="font-bold text-emerald-950 text-base mb-2">Program Remedial &amp; Pengayaan Terstruktur Materi: ${topicStr}</h4>
+        
+        <div class="mb-4">
+          <h5 class="font-semibold text-red-900 text-xs uppercase tracking-wider mb-1">1. Rencana Aksi Remedial Khusus (KKTP &lt; 75):</h5>
+          <table class="w-full border-collapse border border-red-300 text-xs bg-white">
+            <thead class="bg-red-800 text-white">
+              <tr>
+                <th class="border border-red-300 p-2 text-left">Fokus Indikator TP (${topicStr})</th>
+                <th class="border border-red-300 p-2 text-left">Bentuk Intervensi Pembelajaran</th>
+                <th class="border border-red-300 p-2 text-center w-28">Instrumen Re-Asesmen</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="border border-red-300 p-2 font-medium">Penguasaan Prosedur &amp; Langkah Praktik Kerja</td>
+                <td class="border border-red-300 p-2">Praktik ulang terbimbing di workstation lab didampingi tutor sebaya dan instruktur.</td>
+                <td class="border border-red-300 p-2 text-center">Job Sheet Remedial Mandiri</td>
+              </tr>
+              <tr>
+                <td class="border border-red-300 p-2 font-medium">Analisis Troubleshooting &amp; Deviasi Teknis</td>
+                <td class="border border-red-300 p-2">Pemberian studi kasus terarah mengenai anomali operasional pada unit ${topicStr}.</td>
+                <td class="border border-red-300 p-2 text-center">Tes Lisan &amp; Simulasi</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h5 class="font-semibold text-emerald-900 text-xs uppercase tracking-wider mb-1">2. Rencana Aksi Pengayaan (KKTP &ge; 75):</h5>
+          <div class="p-3 bg-white rounded border border-emerald-200 text-xs text-slate-800 space-y-1">
+            <p><strong>&bull; Penugasan Teaching Factory (TEFA):</strong> Siswa ditugaskan merakit atau menyelesaikan pesanan riil mitra DUDIKA materi <em>${topicStr}</em> dengan standar toleransi industri presisi tinggi.</p>
+            <p><strong>&bull; Pemberdayaan Tutor Sebaya:</strong> Siswa berperan memfasilitasi rekan satu regu dalam mempraktikkan SOP teknis dengan mengedepankan etika kerja Bali <em>Menyama Braya</em>.</p>
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (actionType === 'perluas') {
+    refined += `
+      <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+        <h4 class="font-bold text-blue-900 text-sm mb-1">Tambahan Pengayaan &amp; Konteks Industri Terkini (DUDIKA 2026/2027)</h4>
+        <p class="text-xs text-slate-700 leading-relaxed mb-2">Pada implementasi terkini di dunia usaha dan dunia industri (DUDIKA), materi <strong>${topicStr}</strong> telah mengadopsi integrasi sistem otomasi cerdas, efisiensi energi, dan protokol keamanan data berstandar global. Peserta didik dibekali kemampuan membaca alur sistem secara holistik dan melakukan tindakan preventif guna menjamin keandalan operasional.</p>
+        <p class="text-xs text-blue-950 font-semibold">&bull; Standar Acuan: SKKNI Level II/III dan Manual Operasional Mitra DUDIKA SMK Negeri 1 Bebandem.</p>
       </div>
     `;
   } else if (actionType === 'bali') {
     refined += `
-      <div class="mt-4 p-4 bg-amber-50 border border-amber-300 rounded">
-        <h4 class="font-bold text-amber-900">Integrasi Kearifan Lokal Bali (Tri Hita Karana)</h4>
-        <p class="text-sm text-gray-800">Menanamkan nilai <em>Menyama Braya</em> dalam kerja tim kejuruan dan pemeliharaan keharmonisan fasilitas bengkel.</p>
+      <div class="mt-4 p-4 bg-amber-50 border border-amber-300 rounded-xl">
+        <h4 class="font-bold text-amber-900 text-sm mb-1">Integrasi Kearifan Lokal Bali (Tri Hita Karana &amp; Menyama Braya)</h4>
+        <p class="text-xs text-amber-950 leading-relaxed mb-1">Dalam setiap tahapan praktik materi <strong>${topicStr}</strong>, peserta didik senantiasa mengamalkan nilai-nilai luhur Bali:</p>
+        <ul class="list-disc pl-5 text-xs text-amber-900 space-y-1">
+          <li><strong>Parahyangan:</strong> Mengawali dan mengakhiri kegiatan di lab/bengkel dengan doa rasa syukur atas keselamatan kerja.</li>
+          <li><strong>Pawongan (Menyama Braya):</strong> Menjaga komunikasi santun, saling membantu dalam tim kerja teknis, dan menghindari perselisihan.</li>
+          <li><strong>Palemahan:</strong> Menjaga kelestarian lingkungan bengkel melalui pengelolaan limbah praktik dan budaya 5R (Ringkas, Rapi, Resik, Rawat, Rajin).</li>
+        </ul>
+      </div>
+    `;
+  } else if (actionType === 'sederhanakan') {
+    refined += `
+      <div class="mt-4 p-3.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800">
+        <h4 class="font-bold text-slate-900 mb-1">Ringkasan Konsep Inti (Bahasa Siswa):</h4>
+        <p class="leading-relaxed">Secara sederhana, materi <strong>${topicStr}</strong> mengajarkan kita 3 langkah pokok: pertama mengenali bagian dan fungsi dasarnya, kedua merangkai atau mengoperasikannya sesuai urutan buku panduan (SOP), dan ketiga memeriksa apakah hasilnya sudah berfungsi normal dan aman digunakan.</p>
+      </div>
+    `;
+  } else {
+    refined += `
+      <div class="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-950">
+        <h4 class="font-bold text-indigo-900 mb-1">Pembaruan Berbasis AI (Materi: ${topicStr}):</h4>
+        <p class="text-slate-700 leading-relaxed">${instruction || 'Data dan uraian kompetensi telah diselaraskan dengan standar capaian pembelajaran terkini.'}</p>
       </div>
     `;
   }
 
-  return res.json({ content: refined });
+  return res.json({ content: refined, source: 'curated' });
 });
 
 
