@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix SI GURU",
+  "description": "Platform AI untuk menyusun administrasi pembelajaran SMK Negeri 1 Bebandem secara otomatis, sistematis, dan siap dicetak.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
